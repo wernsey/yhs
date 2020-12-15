@@ -64,7 +64,10 @@ typedef int SOCKET;
 #include <WS2tcpip.h>
 #include <windows.h>
 #include <malloc.h>
+
+#ifdef _MSC_VER
 #include <crtdbg.h>
+#endif
 
 typedef unsigned __int64 uint64_t;
 typedef unsigned __int32 uint32_t;
@@ -76,16 +79,29 @@ typedef unsigned __int8 uint8_t;
 #define CLOSESOCKET(X) (closesocket(X))
 #define ALLOCA(X) (_alloca(X))
 
+#ifdef _MSC_VER
 typedef int socklen_t;
 
-#ifdef _MSC_VER
 #pragma warning(error:4020)// too many actual parameters
 #pragma warning(disable:4204)// nonstandard extension used : non-constant
                              // aggregate initializer (think this is part of C99
                              // now)
-#endif//_MSC_VER
 
 #define DEBUG_BREAK() (__debugbreak())
+
+#else // !_MSC_VER
+
+// This is the Mingw build
+
+#define DEBUG_BREAK() (assert(0))
+
+// Mingw does not have the
+const char * inet_ntop(int af, const void *src, char *dst, size_t size);
+
+// Seems MinGW has a strlcpy, but i
+size_t strlcpy(char *dst, const char *src, size_t size);
+
+#endif //_MSC_VER
 
 #endif
 
@@ -177,19 +193,19 @@ enum
     // Maximum size of request, in chars, as sent (i.e. excluding trailing
     // 0)
     MAX_REQUEST_SIZE=8192,
-    
+
     // `backlog' argument for listening socket.
     LISTEN_SOCKET_BACKLOG=10,
-    
+
     // Maximum length of format string expansion when using yhs_text*
     MAX_TEXT_LEN=8192,
-    
+
     // Size of write buffer.
     WRITE_BUF_SIZE=1000,
-	
+
 	// Max size of server name
 	MAX_SERVER_NAME_SIZE=64,
-	
+
 	// Max length of a path for the file serving component
 	MAX_PATH_SIZE=1000,
 
@@ -380,12 +396,12 @@ struct yhsHandler
 
 	unsigned flags;
 	unsigned valid_methods;
-    
+
     char *res_path;
     size_t res_path_len;
 
 	char *description;
-    
+
     yhsResPathHandlerFn handler_fn;
     void *context;
 };
@@ -397,13 +413,13 @@ struct PNGData
 {
     // Dimensions of image and bytes/pixel.
     int w,h,bypp;
-    
+
     // Coords of next pixel to be written.
     int x,y;
-    
+
     // Chunk CRC so far.
     uint32_t chunk_crc;
-    
+
     // Adler sums for the Zlib encoding.
     uint32_t adler32_s1,adler32_s2;
 };
@@ -424,7 +440,7 @@ enum yhsResponseType
     RT_NONE_SET,
     RT_DEFER,
 
-	// TEXT and IMAGE are distinguished for asserting purposes. 
+	// TEXT and IMAGE are distinguished for asserting purposes.
 	RT_TEXT,
 	RT_IMAGE,
 
@@ -574,7 +590,7 @@ struct yhsRequest
 	unsigned flags;
     yhsServer *server;
 	const yhsHandler *handler;
-    
+
     SOCKET sock;
     yhsResponseType type;
 	yhsResponseState state;
@@ -613,21 +629,21 @@ struct yhsServer
 {
 	// port to open on
 	int port;
-	
+
 	//
 	ServerState state;
-	
+
     // socket that listens for incoming connections.
     SOCKET listen_sock;
-    
+
     // doubly-linked. terminator has NULL handler_fn.
     yhsHandler handlers;
 
 	// singly-linked.
 	yhsRequest *first_deferred;
-	
+
 	LogData log;
-    
+
     // server name
 	char name[MAX_SERVER_NAME_SIZE];
 };
@@ -645,20 +661,20 @@ static void do_log(LogData *log,yhsLogCategory cat,const char *fmt,...)
 {
 	char tmp[1000];
 	va_list v;
-	
+
 	if(!log->enabled[cat])
 		return;
-	
+
 	if(!log->fn)
 		return;
-	
+
 	va_start(v,fmt);
-	
+
 	vsnprintf(tmp,sizeof tmp,fmt,v);
 	tmp[sizeof tmp-1]=0;
-	
+
 	va_end(v);
-	
+
 	(*log->fn)(cat,tmp,log->context);
 }
 
@@ -685,7 +701,7 @@ static void yhs_socket_err(yhsServer *server,const char *file,const char *functi
 #else
 	int err=errno;
 #endif
-	
+
 	yhs_err(server,file,function,line,msg);
 
 #ifdef WIN32
@@ -710,14 +726,14 @@ static void yhs_socket_err(yhsServer *server,const char *file,const char *functi
 // static void hex_dump(const void *data,size_t data_size)
 // {
 //     size_t i;
-//     
+//
 //     for(i=0;i<data_size+16;i+=16)
 //     {
 //         size_t j;
 //         const uint8_t *line=(const uint8_t *)data+i;
-//         
+//
 //         printf("%08lX:",i);
-//         
+//
 //         for(j=0;j<16;++j)
 //         {
 //             if(i+j<data_size)
@@ -725,9 +741,9 @@ static void yhs_socket_err(yhsServer *server,const char *file,const char *functi
 //             else
 //                 printf(" **");
 //         }
-//         
+//
 //         printf("  ");
-//         
+//
 //         for(j=0;j<16;++j)
 //         {
 //             if(i+j<data_size)
@@ -735,7 +751,7 @@ static void yhs_socket_err(yhsServer *server,const char *file,const char *functi
 //             else
 //                 printf(" ");
 //         }
-//         
+//
 //         printf("\n");
 //     }
 // }
@@ -749,52 +765,52 @@ static yhsBool create_listen_socket(yhsServer *server)
     const int reuse_addr=1;
     struct sockaddr_in listen_addr;
     SOCKET sock=socket(PF_INET,SOCK_STREAM,IPPROTO_TCP);
-    
+
     if(sock<0)
     {
 		SERVER_ERROR(server,"Create listen socket.");
         goto done;
     }
-    
+
     if(setsockopt(sock,SOL_SOCKET,SO_REUSEADDR,(const char *)&reuse_addr,sizeof reuse_addr)<0)
     {
         SERVER_ERROR(server,"Set REUSEADDR.");
         goto done;
     }
-    
+
     // Bind
     memset(&listen_addr,0,sizeof listen_addr);
-    
+
     listen_addr.sin_family=AF_INET;
     listen_addr.sin_addr.s_addr=htonl(INADDR_ANY);
-    
+
     assert(server->port>=0&&server->port<65536);
     listen_addr.sin_port=htons((u_short)server->port);
-    
+
     if(bind(sock,(struct sockaddr *)&listen_addr,sizeof(listen_addr))<0)
     {
         SERVER_ERROR(server,"Bind listen socket.");
         goto done;
     }
-    
+
     // Listen
     if(listen(sock,LISTEN_SOCKET_BACKLOG)<0)
     {
         SERVER_ERROR(server,"Set listen socket to listen mode.");
         goto done;
     }
-    
+
     good=1;
-    
+
 done:
     if(!good)
     {
         CLOSESOCKET(sock);
         sock=INVALID_SOCKET;
     }
-	
+
 	server->listen_sock=sock;
-    
+
     return sock;
 }
 
@@ -805,28 +821,28 @@ static void print_likely_urls(yhsServer *server)
 {
     SERVER_INFO(server,"YHS: Likely URLs for this system are:\n");
     SERVER_INFO(server,"\n");
-    
+
 #ifdef WIN32
-    
+
     {
         char computer_name[500];
         DWORD computer_name_size=sizeof computer_name;
-        
+
         if(!GetComputerNameExA(ComputerNameDnsHostname,computer_name,&computer_name_size))
             SERVER_INFO(server,"YHS: Failed to get computer name.\n");
         else
         {
             SERVER_INFO(server,"    http://%s",computer_name);
-            
+
             if(server->port!=80)
                 SERVER_INFO(server,":%d",server->port);
-            
+
             SERVER_INFO(server,"/\n");
         }
     }
-    
+
 #else
-    
+
     {
         struct ifaddrs *interfaces;
         if(getifaddrs(&interfaces)<0)
@@ -834,33 +850,33 @@ static void print_likely_urls(yhsServer *server)
             SERVER_INFO(server,"Get network interfaces.");
             return;
         }
-        
+
         for(struct ifaddrs *ifa=interfaces;ifa;ifa=ifa->ifa_next)
         {
             if(ifa->ifa_addr->sa_family==AF_INET)
             {
                 struct sockaddr_in *addr_in=(struct sockaddr_in *)ifa->ifa_addr;
-                
+
                 uint32_t addr=ntohl(addr_in->sin_addr.s_addr);
-                
+
                 if(addr==0x7F000001)
                     continue;//don't bother printing localhost.
-                
+
                 SERVER_INFO(server,"    http://%d.%d.%d.%d",(addr>>24)&0xFF,(addr>>16)&0xFF,(addr>>8)&0xFF,(addr>>0)&0xFF);
-                
+
                 if(server->port!=80)
                     SERVER_INFO(server,":%d",server->port);
-                
+
                 SERVER_INFO(server,"/\n");
             }
         }
-        
+
         freeifaddrs(interfaces);
         interfaces=NULL;
-        
+
         SERVER_INFO(server,"\n");
     }
-    
+
 #endif
 }
 
@@ -872,12 +888,12 @@ static void default_log_callback(yhsLogCategory category,const char *message,voi
 	FILE *f;
 
 	(void)context;
-	
+
 	if(category==YHS_LOG_ERROR)
 		f=stderr;
 	else
 		f=stdout;
-	
+
 	fputs(message,f);
 }
 
@@ -892,20 +908,20 @@ yhsServer *yhs_new_server(int port)
 		return NULL;
 
     memset(server,0,sizeof *server);
-    
+
     server->handlers.next=&server->handlers;
     server->handlers.prev=&server->handlers;
-	
+
 	server->listen_sock=INVALID_SOCKET;
-	
+
 	server->port=port;
-	
+
 	yhs_set_server_log_enabled(server,YHS_LOG_ERROR,1);
-	
+
 	yhs_set_server_log_callback(server,&default_log_callback,0);
-    
+
 	yhs_set_server_name(server,"yhs");
-    
+
     return server;
 }
 
@@ -924,25 +940,25 @@ void yhs_set_server_name(yhsServer *server,const char *name)
 void yhs_delete_server(yhsServer *server)
 {
     yhsHandler *h;
-    
+
     if(!server)
         return;
-    
+
     h=server->handlers.next;
     while(h->handler_fn)
     {
         yhsHandler *next=h->next;
-        
+
 		FREE(h->description);
         FREE(h->res_path);
         FREE(h);
-        
+
         h=next;
     }
-    
+
     if(server->listen_sock!=INVALID_SOCKET)
         CLOSESOCKET(server->listen_sock);
-    
+
     FREE(server);
 }
 
@@ -954,10 +970,10 @@ static int select_socket(SOCKET sock,int num_seconds,int *is_readable,int *is_wr
     struct timeval timeout;
     fd_set read_fds,write_fds;
     int nfds=0;
-    
+
     timeout.tv_sec=num_seconds;
     timeout.tv_usec=0;
-    
+
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable:4127)
@@ -977,14 +993,14 @@ static int select_socket(SOCKET sock,int num_seconds,int *is_readable,int *is_wr
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
-    
+
 #ifndef WIN32
     nfds=sock+1;
 #endif//WIN32
-    
+
 	if(select(nfds,is_readable?&read_fds:0,is_writeable?&write_fds:0,NULL,&timeout)<0)
         return 0;
-    
+
 	if(is_readable)
 		*is_readable=FD_ISSET(sock,&read_fds);
 
@@ -1003,7 +1019,7 @@ static int accept_request(yhsServer *server,SOCKET *accepted_sock)
     socklen_t client_addr_size=sizeof client_addr;
     int is_accept_waiting;
 	char client_addr_str[100];
-    
+
     // Maybe accept request?
     if(!select_socket(server->listen_sock,0,&is_accept_waiting,0))
     {
@@ -1011,10 +1027,10 @@ static int accept_request(yhsServer *server,SOCKET *accepted_sock)
         // @TODO: Should close and re-open socket if this happens.
         return 0;
     }
-    
+
     if(!is_accept_waiting)
         return 0;//nobody waiting.
-    
+
     // Accept socket.
     *accepted_sock=accept(server->listen_sock,(struct sockaddr *)&client_addr,&client_addr_size);
     if(*accepted_sock<0)
@@ -1022,7 +1038,7 @@ static int accept_request(yhsServer *server,SOCKET *accepted_sock)
         SERVER_SOCKET_ERROR(server,"Accept incoming connection on listen socket.");
         return 0;
     }
-	
+
 #ifndef _WIN32
 
 	// Suppress SIGPIPE. I am quite capable of checking return values
@@ -1037,10 +1053,10 @@ static int accept_request(yhsServer *server,SOCKET *accepted_sock)
 	}
 
 #endif//_WIN32
-	
+
 	inet_ntop(AF_INET,&client_addr.sin_addr,client_addr_str,sizeof client_addr_str);
 	SERVER_DEBUG(server,"%s: connection from %s port %d\n",__FUNCTION__,client_addr_str,ntohs(client_addr.sin_port));
-    
+
     return 1;
 }
 
@@ -1049,19 +1065,19 @@ static int read_request_header(yhsServer *server,SOCKET sock,char *buf,size_t bu
     // Keep reading until the data ends with the \r\n\r\n that signifies the
     // end of the request, or there's no more buffer space.
     int good=0;
-    
+
     *request_size=0;
-    
+
     for(;;)
     {
         int is_data_waiting,n;
-        
+
         if(!select_socket(sock,EXPECTED_DATA_TIMEOUT,&is_data_waiting,0))
         {
             SERVER_SOCKET_ERROR(server,"Check accepted socket readability.");
             break;
         }
-        
+
         if(!is_data_waiting)
         {
             // The polling timeout is deliberately set high; if there's no
@@ -1069,26 +1085,26 @@ static int read_request_header(yhsServer *server,SOCKET sock,char *buf,size_t bu
             SERVER_SOCKET_ERROR(server,"Timed out waiting for client to send request.");
             break;
         }
-        
+
         if(*request_size==buf_size)
         {
             // Too much data in request header.
             SERVER_ERROR(server,"Request too large.");
             break;
         }
-        
+
         n=recv(sock,buf+*request_size,1,0);
         if(n<=0)
         {
             // Error, or client closed connection prematurely.
             if(n<0)
                 SERVER_SOCKET_ERROR(server,"Read accepted socket.");
-            
+
             break;
         }
-        
+
         *request_size+=n;
-        
+
         // Is there a \r\n\r\n yet?
         if(*request_size>=4)
         {
@@ -1108,10 +1124,10 @@ static int read_request_header(yhsServer *server,SOCKET sock,char *buf,size_t bu
 			}
 		}
     }
-    
+
 done:;
     return good;
-}    
+}
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
@@ -1119,7 +1135,7 @@ done:;
 static char unhex(char nybble)
 {
     char c=(char)tolower(nybble);
-    
+
     if(c>='a'&&c<='f')
         return 10+(c-'a');
     else if(c>='0'&&c<='9')
@@ -1132,30 +1148,30 @@ static char *fix_up_uri(char *uri_arg)
 {
     // @TODO: IE lets you type, like, "http:\\xyz\etc" - how does that end up?
     static char http_prefix[]="http://";
-    
+
     char *uri=uri_arg;
-    
+
     if(STRNICMP(uri,http_prefix,sizeof http_prefix-1)==0)
     {
         // Skip prefix
         uri+=sizeof http_prefix-1;
-        
+
         // Skip hostname
         uri=strchr(uri,'/');
-        
+
         if(!uri)
         {
             // Malformed URI, I think? Return something sensible anyway.
             return 0;
         }
     }
-    
+
     // Sort out '%' in the URI.
     //
     // http://www.ietf.org/rfc/rfc2396.txt
     {
         char *src=uri,*dest=uri;
-        
+
         while(*src!=0)
         {
             if(src[0]=='%'&&isxdigit(src[1])&&isxdigit(src[2]))
@@ -1166,10 +1182,10 @@ static char *fix_up_uri(char *uri_arg)
             else
                 *dest++=*src++;
         }
-        
+
         *dest=0;
     }
-    
+
     return uri;
 }
 
@@ -1356,7 +1372,7 @@ static int process_request_header(char *request,size_t *method_pos,size_t *res_p
 //static void error_handler(yhsRequest *re,void *context,yhsResPathHandlerArgs *args)
 //{
 //    yhs_data_response(re,"text/html");
-//    
+//
 //    yhs_textf(re,"<html>\n");
 //    yhs_textf(re," <head>\n");
 //    yhs_textf(re,"  <title>%s</title>\n",context);
@@ -1381,7 +1397,7 @@ static const yhsHandler *find_handler_for_res_path(yhsServer *server,const char 
 {
     const yhsHandler *h;
     size_t res_path_len=strlen(res_path);
-    
+
     for(h=server->handlers.prev;h->handler_fn;h=h->prev)
     {
 		if(h->valid_methods&method)
@@ -1624,11 +1640,11 @@ static void close_connection_cleanly(yhsRequest *re)
 	{
 		default:
 			break;
-			
+
 		case RT_IMAGE:
 			assert(re->png.y==re->png.h);
 			break;
-			
+
 		case RT_WEBSOCKET:
 			do_websocket_closing_handshake(re);
 			break;
@@ -1691,7 +1707,7 @@ static void send_response_byte(yhsRequest *re,uint8_t value)
 static void debug_dump_string(yhsServer *server,const char *str,int max_len)
 {
     int i;
-    
+
     for(i=0;(max_len<0||i<max_len)&&str[i]!=0;++i)
     {
         switch(str[i])
@@ -1699,19 +1715,19 @@ static void debug_dump_string(yhsServer *server,const char *str,int max_len)
         case '\n':
             SERVER_DEBUG(server,"\\n");
             break;
-            
+
         case '\r':
             SERVER_DEBUG(server,"\\r");
             break;
-            
+
         case '\t':
             SERVER_DEBUG(server,"\\t");
             break;
-            
+
         case '"':
             SERVER_DEBUG(server,"\\\"");
             break;
-            
+
         default:
             SERVER_DEBUG(server,"%c",str[i]);
             break;
@@ -1727,18 +1743,18 @@ static void handle_toc(yhsRequest *re)
 	yhsHandler *h;
 
 	yhs_begin_data_response(re,"text/html");
-	
+
 	yhs_textf(re,"<html>\n");
 	yhs_html_textf(re," <head><title>\a+%s\a- - Contents</title></head>\n",re->server->name);
 	yhs_textf(re," <body>\n");
 	yhs_html_textf(re," <h1>\a+%s\a- - Contents</h1>\n",re->server->name);
-	
+
 	for(h=re->server->handlers.next;h->handler_fn;h=h->next)
 	{
 		if(h->flags&HF_TOC)
 		{
 			yhs_html_textf(re," <p><a href=\"\a+%s\a-\">",h->res_path);
-			
+
 			if(h->description)
 				yhs_html_textf(re,"\a+%s (",h->description);
 
@@ -1750,7 +1766,7 @@ static void handle_toc(yhsRequest *re)
 			yhs_textf(re,"\n");
 		}
 	}
-	
+
 	yhs_textf(re," </body>\n");
 	yhs_textf(re,"</html>\n");
 }
@@ -1815,7 +1831,7 @@ const char *yhs_get_method_str(yhsRequest *re)
 const char *yhs_find_header_field(yhsRequest *re,const char *key,const char *last_result)
 {
 	const char *field;
-	
+
 	if(last_result)
 	{
 		assert(last_result>=re->hdr.data+re->hdr.first_field_pos&&last_result<re->hdr.data+re->hdr.data_size);
@@ -1829,7 +1845,7 @@ const char *yhs_find_header_field(yhsRequest *re,const char *key,const char *las
 		const char *k=field;
 		size_t n=strlen(k);
 		const char *v=k+n+1;
-		
+
 		if(n==0)
 			return 0;
 
@@ -1972,7 +1988,7 @@ static int maybe_upgrade_to_websocket(yhsRequest *re)
 static int accept_new_connections(yhsServer *server)
 {
 	int any=0;
-	
+
 	for(;;)
 	{
 		// response gunk
@@ -2079,13 +2095,13 @@ done:
 int yhs_update(yhsServer *server)
 {
     int any=0;
-	
+
 	switch(server->state)
 	{
 		default:
 			assert(0);
 			break;
-			
+
 		case SS_NONE:
 		{
 			if(!create_listen_socket(server))
@@ -2093,26 +2109,26 @@ int yhs_update(yhsServer *server)
 			else
 			{
 				print_likely_urls(server);
-				
+
 				server->state=SS_RUNNING;
 			}
 		}
 			break;
-			
+
 		case SS_RUNNING:
 		{
 			if(accept_new_connections(server))
 				any=1;
 		}
 			break;
-			
+
 		case SS_ERROR:
 		{
 			// erm...
 		}
 			break;
 	}
-	
+
     return any;
 }
 
@@ -2131,7 +2147,7 @@ void yhs_set_server_log_callback(yhsServer *server,yhsLogFn fn,void *context)
 void yhs_set_server_log_enabled(yhsServer *server,yhsLogCategory category,yhsBool enabled)
 {
 	assert(category>=0&&category<YHS_LOG_ENDVALUE);
-	
+
 	server->log.enabled[category]=enabled;
 }
 
@@ -2141,7 +2157,7 @@ void yhs_set_server_log_enabled(yhsServer *server,yhsLogCategory category,yhsBoo
 void yhs_begin_data_response(yhsRequest *re,const char *type)
 {
     assert(re->type==RT_NONE_SET);
-	
+
 	header(re,RT_TEXT,"200 OK");//,"Content-Type",type,(char *)0);
 	yhs_header_field(re,"Content-Type",type);
 	//yhs_header_field(re,"Connection","close");
@@ -2161,10 +2177,10 @@ void yhs_textf(yhsRequest *re,const char *fmt,...)
 void yhs_textv(yhsRequest *re,const char *fmt,va_list v)
 {
     char text[MAX_TEXT_LEN];
-    
+
     vsnprintf(text,sizeof text,fmt,v);
 	text[sizeof text-1]=0;
-    
+
     yhs_text(re,text);
 }
 
@@ -2190,10 +2206,10 @@ void yhs_html_textf(yhsRequest *re,const char *fmt,...)
 void yhs_html_textv(yhsRequest *re,const char *fmt,va_list v)
 {
     char text[MAX_TEXT_LEN];
-    
+
     vsnprintf(text,sizeof text,fmt,v);
 	text[sizeof text-1]=0;
-    
+
     yhs_html_text(re,text);
 }
 
@@ -2206,7 +2222,7 @@ void yhs_html_text(yhsRequest *re,const char *text)
 	const char *c;
 
 	assert(re->type==RT_TEXT);
-	
+
 	for(c=text;*c!=0;++c)
 	{
 		if(esc_flag)
@@ -2219,7 +2235,7 @@ void yhs_html_text(yhsRequest *re,const char *text)
 			{
 				// umm...
 			}
-			
+
 			esc_flag=NULL;
 		}
 		else
@@ -2272,19 +2288,19 @@ static uint32_t yhs_crc_table[256];
 static void png8(yhsRequest *re,uint8_t value)
 {
     assert(yhs_crc_table[1]!=0);
-    
+
     re->png.chunk_crc=(re->png.chunk_crc>>8)^yhs_crc_table[value^(re->png.chunk_crc&0xFF)];
-    
+
     yhs_data(re,&value,1);
 }
 
 static void png8_adler(yhsRequest *re,uint8_t value)
 {
     png8(re,value);
-    
+
     re->png.adler32_s1+=value;
     re->png.adler32_s1%=65521;
-    
+
     re->png.adler32_s2+=re->png.adler32_s1;
     re->png.adler32_s2%=65521;
 }
@@ -2309,16 +2325,16 @@ static void start_png_chunk(yhsRequest *re,uint32_t length,const char *name)
                 yhs_crc_table[i] = (yhs_crc_table[i] >> 1) ^ (yhs_crc_table[i] & 1 ? 0xedb88320 : 0);
         }
     }
-    
+
     png32(re,length);
-    
+
     re->png.chunk_crc=~0u;
-    
+
     png8(re,name[0]);
     png8(re,name[1]);
     png8(re,name[2]);
     png8(re,name[3]);
-    
+
 }
 
 static void end_png_chunk(yhsRequest *re)
@@ -2332,21 +2348,21 @@ void yhs_begin_image_response(yhsRequest *re,int width,int height,int ncomp)
 {
     assert(ncomp==3||ncomp==4);
     assert(re->type==RT_NONE_SET);
-	
+
 	header(re,RT_IMAGE,"200 OK");
 	yhs_header_field(re,"Content-Type","image/png");
 
 	memset(&re->png,0,sizeof re->png);
-    
+
     re->png.w=width;
     re->png.h=height;
-    
+
     re->png.x=0;
     re->png.y=0;
-    
+
     re->png.adler32_s1=1;
     re->png.adler32_s2=0;
-    
+
     if(ncomp==4)
         re->png.bypp=4;
     else
@@ -2385,60 +2401,60 @@ void yhs_pixel(yhsRequest *re,int r,int g,int b,int a)
 		png8(re,1);//compressor used fastest algorithm; no dictionary; +1 for FCHECK.
 		end_png_chunk(re);
 	}
-    
+
     if(re->png.x==0)
     {
         int nlen=1+re->png.w*re->png.bypp;
         assert(nlen>=0&&nlen<65536);
-        
+
         // 5 for the deflate header; 1 for the filter byte; then the
         // scanline data.
         start_png_chunk(re,5+1+re->png.w*re->png.bypp,"IDAT");
-        
+
         // deflate data
         png8(re,0);//BYTPE=0 (no compression)
-        
+
         png8(re,(uint8_t)(nlen>>0));
         png8(re,(uint8_t)(nlen>>8));
         png8(re,(uint8_t)~(nlen>>0));
         png8(re,(uint8_t)~(nlen>>8));
-        
+
         png8_adler(re,0);///filter type (0=no filter)
     }
-    
+
     png8_adler(re,(uint8_t)r);
     png8_adler(re,(uint8_t)g);
     png8_adler(re,(uint8_t)b);
-    
+
     if(re->png.bypp>3)
         png8_adler(re,(uint8_t)a);
-    
+
     ++re->png.x;
-    
+
     if(re->png.x==re->png.w)
     {
         end_png_chunk(re);
-        
+
         ++re->png.y;
         re->png.x=0;
-        
+
         if(re->png.y==re->png.h)
         {
             // Final IDAT
-            
+
             start_png_chunk(re,5+4,"IDAT");
-            
+
             // 0-byte final uncompressed chunk
             png8(re,1);
             png8(re,0);
             png8(re,0);
             png8(re,(uint8_t)~0);
             png8(re,(uint8_t)~0);
-            
+
             // Zlib checksum
             png32(re,(re->png.adler32_s2<<16)|(re->png.adler32_s1<<0));
             end_png_chunk(re);
-            
+
             start_png_chunk(re,0,"IEND");
             end_png_chunk(re);
         }
@@ -2459,10 +2475,10 @@ void yhs_error_response(yhsRequest *re,const char *status_line)
 void yhs_verbose_error_response(yhsRequest *re,const char *status_line,const char *elaboration)
 {
 	SERVER_INFO(re->server,"%s: %s\n",__FUNCTION__,status_line);
-	
+
 	header(re,RT_TEXT,status_line);
 	yhs_header_field(re,"Content-Type","text/html");
-    
+
     yhs_textf(re,"<html>\n");
     yhs_textf(re," <head>\n");
     yhs_html_textf(re,"  <title>\a+%s - %s\a-</title>\n",re->server->name,status_line);
@@ -2473,10 +2489,10 @@ void yhs_verbose_error_response(yhsRequest *re,const char *status_line,const cha
 
 	if(elaboration)
 		yhs_html_textf(re,"  <p>\a+%s\a-</p>",elaboration);
-	
+
 	yhs_textf(re,"  <p>HTTP Method: <tt>%s</tt></p>",yhs_get_method_str(re));
 	yhs_html_textf(re,"  <p>Resource Path: <tt>\a+%s\a-</tt></p>",yhs_get_path(re));
-	
+
     yhs_textf(re,"  <hr>\n");
     yhs_textf(re,"  <i>yocto HTTP server - compiled at %s on %s</i>\n",__TIME__,__DATE__);
     yhs_textf(re," </body>\n");
@@ -2550,7 +2566,7 @@ static int recv_websocket_bytes(yhsRequest *re,void *buf,int buf_size,const char
 	while(left>0)
 	{
 		int n;
-		
+
 		if(dest)
 			n=recv(re->sock,dest,left,0);
 		else
@@ -2675,14 +2691,14 @@ enum DoControlFramesMode
 	// error; if no data on web socket, reset *got_data_frame and return
 	// without error.
 	DCFM_POLL_OR_READ_DATA,
-	
+
 	// keep processing control frames as long as some are available. if
 	// no data on web socket, block. if a data frame is available, set
 	// *got_data_frame and return without error. (in BLOCK_AND_READ_DATA
 	// mode, do_control_frames will never return with *got_data_frame
 	// reset.)
 	DCFM_BLOCK_AND_READ_DATA,
-	
+
 	// spin, waiting for a CLOSE control frame. if data frames are
 	// received, they are discarded out of hand without being checked.
 	DCFM_WAIT_FOR_CLOSE,
@@ -3055,7 +3071,7 @@ static int recv_websocket_data(yhsRequest *re,void *buf,size_t buf_size,size_t *
 								SERVER_ERROR(re->server,"received bad UTF-8 byte 2+");
 								goto bad;
 							}
-							
+
 							--re->ws.recv.utf8_left;
 
 							if(re->ws.recv.utf8_left==0)
@@ -3373,9 +3389,9 @@ void yhs_end_deferred_response(yhsRequest **re_ptr)
 // void yhs_end_deferred_response(yhsRequest *re)
 // {
 // 	assert(re->flags&RF_DEFERRED);
-//     
+//
 //     finish_response(re);
-// 
+//
 // 	FREE(re);
 // }
 
@@ -3388,7 +3404,7 @@ yhsBool yhs_get_content_details(yhsRequest *re,const char **type,int *length)
 	const char *t=yhs_find_header_field(re,"Content-Type",0);
 	const char *l_str=yhs_find_header_field(re,"Content-Length",0);
 	int l=0;
-	
+
 	if(l_str)
 		l=atoi(l_str);
 
@@ -3396,13 +3412,13 @@ yhsBool yhs_get_content_details(yhsRequest *re,const char **type,int *length)
 	{
 		if(type)
 			*type=t;
-		
+
 		if(length)
 			*length=l;
-		
+
 		got=1;
 	}
-	
+
 	return got;
 }
 
@@ -3412,22 +3428,22 @@ yhsBool yhs_get_content_details(yhsRequest *re,const char **type,int *length)
 int yhs_get_content(yhsRequest *re,int num,char *buf)
 {
     int num_recvd=0;
-    
+
     while(num_recvd<num)
     {
         int r,is_readable;
-        
+
         if(!select_socket(re->sock,EXPECTED_DATA_TIMEOUT,&is_readable,0))
         {
             SERVER_SOCKET_ERROR(re->server,"check socket readability.");
             return 0;
         }
-        
+
         if(!is_readable)
             break;
-        
+
         r=recv(re->sock,buf+num_recvd,num-num_recvd,0);
-        
+
         if(r==-1)
         {
             SERVER_SOCKET_ERROR(re->server,"recv.");
@@ -3438,13 +3454,13 @@ int yhs_get_content(yhsRequest *re,int num,char *buf)
             // Other side closed connection...
             return 0;
         }
-        
+
         num_recvd+=r;
     }
-    
+
     if(num_recvd<num)
         return 0;
-    
+
     return 1;
 }
 
@@ -3463,129 +3479,129 @@ YHS_EXTERN int yhs_read_form_content(yhsRequest *re)
 	content_length_str=yhs_find_header_field(re,"Content-Length",0);
 	if(!content_type||!content_length_str)
 		goto done;
-    
+
     // Sorry, only application/x-www-form-urlencoded for now.
     if(strcmp(content_type,"application/x-www-form-urlencoded")!=0)
         goto done;
-    
+
 	//
 	content_length=atoi(content_length_str);
     if(content_length==0)
         goto done;
-    
+
     // Get form data and pop a \0x at the end.
 	assert(!re->form.controls_data_buffer);
     re->form.controls_data_buffer=(char *)MALLOC(content_length+1);
     if(!re->form.controls_data_buffer)
         goto done;
-    
+
     if(!yhs_get_content(re,content_length,re->form.controls_data_buffer))
         goto done;
-    
+
     re->form.controls_data_buffer[content_length]=0;
-    
+
     // Count controls.
     re->form.num_controls=1;
     {
         int i;
-        
+
         for(i=0;re->form.controls_data_buffer[i]!=0;++i)
         {
             if(re->form.controls_data_buffer[i]=='&')
                 ++re->form.num_controls;
         }
     }
-    
+
     // Controls...
     re->form.controls=(KeyValuePair *)MALLOC(re->form.num_controls*sizeof *re->form.controls);
 	if(!re->form.controls)
 		goto done;
-    
+
     //
     {
         KeyValuePair *control=re->form.controls;
         char *dest=re->form.controls_data_buffer;
         const char *src=re->form.controls_data_buffer;
-        
+
         while(src<re->form.controls_data_buffer+content_length)
         {
             assert(control<re->form.controls+re->form.num_controls);
-            
+
             // Store control name
             control->key=dest;
-            
+
             while(*src!='=')
                 *dest++=*src++;
-            
+
             ++src;//skip '='
             *dest++=0;//terminate name
-            
+
             // Store control value
             control->value=dest;
-            
+
             while(*src!='&'&&*src!=0)
             {
                 char c=*src++;
-                
+
                 switch(c)
                 {
                 case '+':
                     *dest++=' ';
                     break;
-                    
+
                 case '%':
                     {
                         int h=unhex(*src++);
                         int l=unhex(*src++);
-                        
+
                         *dest++=(char)((h<<4)|(l<<0));
                     }
                     break;
-                    
+
                 default:
                     *dest++=c;
                     break;
                 }
             }
-            
+
             ++src;//skip '&'
             *dest++=0;//terminate value
-            
+
             ++control;//next control
         }
-        
+
         assert(control==re->form.controls+re->form.num_controls);
     }
-    
+
     good=1;
-    
+
 done:
     if(!good)
     {
         FREE(re->form.controls_data_buffer);
 		re->form.controls_data_buffer=NULL;
-        
+
         FREE(re->form.controls);
         re->form.controls=NULL;
-		
+
         re->form.num_controls=0;
     }
-    
+
     return good;
 }
 
 YHS_EXTERN const char *yhs_find_control_value(yhsRequest *re,const char *control_name)
 {
     size_t i;
-    
+
     for(i=0;i<re->form.num_controls;++i)
     {
         const KeyValuePair *kvp=&re->form.controls[i];
-        
+
         if(strcmp(kvp->key,control_name)==0)
             return kvp->value;
     }
-    
+
     return NULL;
 }
 
@@ -3597,14 +3613,14 @@ YHS_EXTERN size_t yhs_get_num_controls(yhsRequest *re)
 YHS_EXTERN const char *yhs_get_control_name(yhsRequest *re,size_t index)
 {
     assert(index<re->form.num_controls);
-    
+
     return re->form.controls[index].key;
 }
 
 YHS_EXTERN const char *yhs_get_control_value(yhsRequest *re,size_t index)
 {
     assert(index<re->form.num_controls);
-    
+
     return re->form.controls[index].value;
 }
 
@@ -3617,7 +3633,7 @@ static int path_before(const yhsHandler *a,const yhsHandler *b)
         return 1;
     else if(b->res_path_len<a->res_path_len)
         return 0;
-    
+
     return strcmp(a->res_path,b->res_path)<0;//though actually they don't need to be in alphabetical order.
 }
 
@@ -3626,7 +3642,7 @@ yhsHandler *yhs_add_res_path_handler(yhsServer *server,const char *res_path,yhsR
     yhsHandler *h=(yhsHandler *)MALLOC(sizeof *h);
 	char *h_res_path=yhs_strdup(res_path);
     yhsHandler *prev;
-    
+
 	if(!h||!h_res_path)
 	{
 		FREE(h);
@@ -3634,27 +3650,27 @@ yhsHandler *yhs_add_res_path_handler(yhsServer *server,const char *res_path,yhsR
 
 		return 0;
 	}
-    
+
     memset(h,0,sizeof *h);
 
     h->res_path=h_res_path;
 	h->res_path_len=strlen(h->res_path);
-    
+
     h->handler_fn=handler_fn;
     h->context=context;
 
 	// TODO: right decision? (probably...)
 	h->valid_methods=YHS_METHOD_GET|YHS_METHOD_HEAD;
-    
+
     for(prev=server->handlers.next;prev->handler_fn;prev=prev->next)
     {
         if(path_before(prev,h))
             break;
     }
-    
+
     h->prev=prev;
     h->next=prev->next;
-    
+
     h->next->prev=h;
     h->prev->next=h;
 
@@ -3677,7 +3693,7 @@ yhsHandler *yhs_add_to_toc(yhsHandler *handler)
 yhsHandler *yhs_set_handler_description(const char *description,yhsHandler *handler)
 {
 	char *new_description=yhs_strdup(description);
-	
+
 	if(new_description)
 	{
 		FREE(handler->description);
@@ -3721,7 +3737,7 @@ static const char *find_path_extension(const char *path)
 		if(*e=='.')
 			return e+1;
 	}
-	
+
 	return 0;
 }
 
@@ -3731,13 +3747,13 @@ static const char *find_path_extension(const char *path)
 static int is_folder_path(const char *path)
 {
 	size_t n=strlen(path);
-	
+
 	if(n>0)
 	{
 		if(is_path_separator(path[n-1]))
 			return 1;
 	}
-	
+
 	return 0;
 }
 
@@ -3751,10 +3767,10 @@ static int join_paths(char *dest,const char *a,const char *b)
 	else if((a&&!b)||(b&&!a))
 	{
 		const char *src=a?a:b;
-		
+
 		if(strlen(src)>=MAX_PATH_SIZE)
 			return 0;
-		
+
 		strcpy(dest,src);
 	}
 	else
@@ -3763,7 +3779,7 @@ static int join_paths(char *dest,const char *a,const char *b)
 		{
 			if(strlen(b)>=MAX_PATH_SIZE)
 				return 0;
-			
+
 			strcpy(dest,b);
 		}
 		else
@@ -3771,19 +3787,19 @@ static int join_paths(char *dest,const char *a,const char *b)
 			int sep_len=0;
 			if(!is_folder_path(a))
 				sep_len=1;
-			
+
 			if(strlen(a)+sep_len+strlen(b)>=MAX_PATH_SIZE)
 				return 0;
-			
+
 			strcpy(dest,a);
-			
+
 			if(sep_len>0)
 				strcat(dest,"/");
-			
+
 			strcat(dest,b);
 		}
 	}
-	
+
 	return 1;
 }
 
@@ -3796,18 +3812,18 @@ static int join_paths(char *dest,const char *a,const char *b)
 static int normalize_path(char *dest,const char *src)
 {
 	size_t num_to_skip=0;
-	
+
 	size_t src_idx;
 	size_t dest_idx=0;
-	
+
 	int e=strlen(src);
-	
+
 	while(e>=0)
 	{
 		int b=e;
 		while(b>0&&!is_path_separator(src[b-1]))
 			--b;
-		
+
 		if(e-b==2&&src[b]=='.'&&src[b+1]=='.')
 		{
 			++num_to_skip;
@@ -3826,40 +3842,40 @@ static int normalize_path(char *dest,const char *src)
 
 				if(is_path_separator(src[e]))
 					dest[dest_idx++]='/';
-				
+
 				for(i=0;i<e-b;++i)
 					dest[dest_idx++]=src[e-1-i];
 			}
 		}
-		
+
 		e=b-1;
 	}
-	
+
 	if(num_to_skip>0)
 	{
 		// excess ".."s.
 		return 0;
 	}
-	
+
 	dest[dest_idx]=0;
-	
+
 	src_idx=0;
-	
+
 	while(src_idx<dest_idx)
 	{
 		char tmp;
 
 		//std::swap(dest[src_idx++],dest[--dest_idx]);
-		
+
 		--dest_idx;
-		
+
 		tmp=dest[dest_idx];
 		dest[dest_idx]=dest[src_idx];
 		dest[src_idx]=tmp;
-		
+
 		++src_idx;
 	}
-	
+
 	return 1;
 }
 
@@ -3891,17 +3907,17 @@ static DIR *opendir(const char *name)
 		return 0;
 
 	memset(d,0,sizeof *d);
-	
+
 	join_paths(wildcard,name,"*");
-	
+
 	d->hFind=FindFirstFileA(wildcard,&d->next_fd);
-	
+
 	if(d->hFind==INVALID_HANDLE_VALUE)
 	{
 		FREE(d);
 		d=0;
 	}
-	
+
 	return d;
 }
 
@@ -3909,9 +3925,9 @@ static struct dirent *readdir(DIR *d)
 {
 	if(d->hFind==INVALID_HANDLE_VALUE)
 		return 0;
-	
+
 	d->cur_fd=d->next_fd;
-	
+
 	if(d->hFind!=INVALID_HANDLE_VALUE)
 	{
 		if(!FindNextFileA(d->hFind,&d->next_fd))
@@ -3920,7 +3936,7 @@ static struct dirent *readdir(DIR *d)
 			d->hFind=INVALID_HANDLE_VALUE;
 		}
 	}
-	
+
 	d->ent.d_name=d->cur_fd.cFileName;
 	return &d->ent;
 }
@@ -3932,7 +3948,7 @@ static void closedir(DIR *d)
 		FindClose(d->hFind);
 		d->hFind=INVALID_HANDLE_VALUE;
 	}
-	
+
 	FREE(d);
 }
 
@@ -4301,7 +4317,7 @@ static int MIMETypesCompare(const void *a_a,const void *b_a)
 {
 	const MIMEType *a=(const MIMEType *)a_a;
 	const MIMEType *b=(const MIMEType *)b_a;
-	
+
 	return STRICMP(a->ext,b->ext);
 }
 
@@ -4309,19 +4325,19 @@ static const char *FindMIMETypeByExtension(const char *ext)
 {
 	MIMEType key={ext,0};
 	MIMEType *m;
-	
+
 	if(!g_mime_types_sorted)
 	{
 		qsort(g_mime_types,sizeof g_mime_types/sizeof g_mime_types[0],sizeof g_mime_types[0],&MIMETypesCompare);
-		
+
 		g_mime_types_sorted=1;
 	}
-	
+
 	m=(MIMEType *)bsearch(&key,g_mime_types,sizeof g_mime_types/sizeof g_mime_types[0],sizeof g_mime_types[0],&MIMETypesCompare);
-	
+
 	if(!m)
 		return 0;
-	
+
 	return m->type;
 }
 
@@ -4351,66 +4367,66 @@ void yhs_file_server_handler(yhsRequest *re)
 
 		if(!normalize_path(rel_path,yhs_get_path_handler_relative(re)))
 			return;
-		
+
 		if(!join_paths(local_path,root,rel_path))
 			return;
-		
+
 		if(is_folder_path(local_path))
 		{
 			unsigned num_files=0,num_folders=0;
 			double total_size=0.;
 			DIR *d=opendir(local_path);
 			char size_str[100];
-			
+
 			yhs_begin_data_response(re,"text/html");
-			
+
 			yhs_html_textf(re,"<html><head><title>Contents of \a+%s\a-</title></head><body>",strlen(rel_path)==0?"/":rel_path);
-			
+
 			yhs_html_textf(re,"<pre>");
-			
+
 			if(d)
 			{
 				struct dirent *de;
-				
+
 				while((de=readdir(d))!=0)
 				{
 					char size[100];
 					char de_local_path[MAX_PATH_SIZE];
 					struct stat st;
-					
+
 					if(de->d_name[0]=='.')
 						continue;
-					
+
 					if(!join_paths(de_local_path,local_path,de->d_name))
 						continue;
-					
+
 					if(stat(de_local_path,&st)!=0)
 						continue;
-					
+
 					if(st.st_mode&S_IFDIR)
 					{
 						strcpy(size,"");
-						
+
 						++num_folders;
 					}
 					else
 					{
 						get_size_string(size,st.st_size);
-						
+
 						total_size+=st.st_size;
-						
+
 						++num_files;
 					}
-					
+
 					yhs_html_textf(re,"%-10s<a href=\"%s%s\">\a+%s\a-</a>\n",size,de->d_name,st.st_mode&S_IFDIR?"/":"",de->d_name);
 				}
 
 				closedir(d);
 				d=0;
 			}
-			
+
 			get_size_string(size_str,total_size);
-			
+
 			yhs_html_textf(re,"</pre>%s in %u file(s) and %u folder(s)</body></html>",size_str,num_files,num_folders);
 		}
 		else
@@ -4419,27 +4435,208 @@ void yhs_file_server_handler(yhsRequest *re)
 			const char *mime_type=0;
 			FILE *f;
 			int c;
-			
+
 			if(ext)
 				mime_type=FindMIMETypeByExtension(ext);
-			
+
 			if(!mime_type)
 				mime_type="text/plain";
-			
+
 			f=fopen(local_path,"rb");
 			if(!f)
 				return;
-			
+
 			yhs_begin_data_response(re,mime_type);
-			
+
 			while((c=fgetc(f))!=EOF)
 				yhs_data_byte(re,(unsigned char)c);
-			
+
 			fclose(f);
 			f=0;
 		}
 	}
 }
+
+#if defined(WIN32) && !defined(_MSC_VER)
+
+// www.cs.cmu.edu/afs/cs/academic/class/15213-f00/unpv12e/libfree/inet_ntop.c
+
+/* Copyright (c) 1996 by Internet Software Consortium.
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND INTERNET SOFTWARE CONSORTIUM DISCLAIMS
+ * ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL INTERNET SOFTWARE
+ * CONSORTIUM BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+ * DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+ * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS
+ * ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
+ * SOFTWARE.
+ */
+
+#define	IN6ADDRSZ	16
+#define	INT16SZ		 2
+
+/*
+ * WARNING: Don't even consider trying to compile this on a system where
+ * sizeof(int) < 4.  sizeof(int) > 4 is fine; all the world's not a VAX.
+ */
+
+static const char *inet_ntop4(const u_char *src, char *dst, size_t size);
+static const char *inet_ntop6(const u_char *src, char *dst, size_t size);
+
+/* char *
+ * inet_ntop(af, src, dst, size)
+ *	convert a network format address to presentation format.
+ * return:
+ *	pointer to presentation format address (`dst'), or NULL (see errno).
+ * author:
+ *	Paul Vixie, 1996.
+ */
+const char * inet_ntop(int af, const void *src, char *dst, size_t size)
+{
+	switch (af) {
+	case AF_INET:
+		return (inet_ntop4(src, dst, size));
+	case AF_INET6:
+		return (inet_ntop6(src, dst, size));
+	default:
+		errno = WSAEAFNOSUPPORT;
+		return (NULL);
+	}
+	/* NOTREACHED */
+}
+
+/* const char *
+ * inet_ntop4(src, dst, size)
+ *	format an IPv4 address, more or less like inet_ntoa()
+ * return:
+ *	`dst' (as a const)
+ * notes:
+ *	(1) uses no statics
+ *	(2) takes a u_char* not an in_addr as input
+ * author:
+ *	Paul Vixie, 1996.
+ */
+static const char *
+inet_ntop4(src, dst, size)
+	const u_char *src;
+	char *dst;
+	size_t size;
+{
+	static const char fmt[] = "%u.%u.%u.%u";
+	char tmp[sizeof "255.255.255.255"];
+
+	sprintf(tmp, fmt, src[0], src[1], src[2], src[3]);
+	if (strlen(tmp) > size) {
+		errno = WSAENOBUFS; //ENOSPC;
+		return (NULL);
+	}
+	strcpy(dst, tmp);
+	return (dst);
+}
+
+/* const char *
+ * inet_ntop6(src, dst, size)
+ *	convert IPv6 binary address into presentation (printable) format
+ * author:
+ *	Paul Vixie, 1996.
+ */
+static const char *
+inet_ntop6(src, dst, size)
+	const u_char *src;
+	char *dst;
+	size_t size;
+{
+	/*
+	 * Note that int32_t and int16_t need only be "at least" large enough
+	 * to contain a value of the specified size.  On some systems, like
+	 * Crays, there is no such thing as an integer variable with 16 bits.
+	 * Keep this in mind if you think this function should have been coded
+	 * to use pointer overlays.  All the world's not a VAX.
+	 */
+	char tmp[sizeof "ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255"], *tp;
+	struct { int base, len; } best, cur;
+	u_int words[IN6ADDRSZ / INT16SZ];
+	int i;
+
+	/*
+	 * Preprocess:
+	 *	Copy the input (bytewise) array into a wordwise array.
+	 *	Find the longest run of 0x00's in src[] for :: shorthanding.
+	 */
+	memset(words, 0, sizeof words);
+	for (i = 0; i < IN6ADDRSZ; i++)
+		words[i / 2] |= (src[i] << ((1 - (i % 2)) << 3));
+	best.base = -1;
+	cur.base = -1;
+	for (i = 0; i < (IN6ADDRSZ / INT16SZ); i++) {
+		if (words[i] == 0) {
+			if (cur.base == -1)
+				cur.base = i, cur.len = 1;
+			else
+				cur.len++;
+		} else {
+			if (cur.base != -1) {
+				if (best.base == -1 || cur.len > best.len)
+					best = cur;
+				cur.base = -1;
+			}
+		}
+	}
+	if (cur.base != -1) {
+		if (best.base == -1 || cur.len > best.len)
+			best = cur;
+	}
+	if (best.base != -1 && best.len < 2)
+		best.base = -1;
+
+	/*
+	 * Format the result.
+	 */
+	tp = tmp;
+	for (i = 0; i < (IN6ADDRSZ / INT16SZ); i++) {
+		/* Are we inside the best run of 0x00's? */
+		if (best.base != -1 && i >= best.base &&
+		    i < (best.base + best.len)) {
+			if (i == best.base)
+				*tp++ = ':';
+			continue;
+		}
+		/* Are we following an initial run of 0x00s or any real hex? */
+		if (i != 0)
+			*tp++ = ':';
+		/* Is this address an encapsulated IPv4? */
+		if (i == 6 && best.base == 0 &&
+		    (best.len == 6 || (best.len == 5 && words[5] == 0xffff))) {
+			if (!inet_ntop4(src+12, tp, sizeof tmp - (tp - tmp)))
+				return (NULL);
+			tp += strlen(tp);
+			break;
+		}
+		sprintf(tp, "%x", words[i]);
+		tp += strlen(tp);
+	}
+	/* Was it a trailing run of 0x00's? */
+	if (best.base != -1 && (best.base + best.len) == (IN6ADDRSZ / INT16SZ))
+		*tp++ = ':';
+	*tp++ = '\0';
+
+	/*
+	 * Check for overflow, copy, and we're done.
+	 */
+	if ((tp - tmp) > size) {
+		errno = WSAENOBUFS;//ENOSPC;
+		return (NULL);
+	}
+	strcpy(dst, tmp);
+	return (dst);
+}
+
+#endif
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
@@ -4515,13 +4712,13 @@ void yhs_run_unit_tests(void)
 			{"path1/path2/../..","",},
 		};
 		size_t i;
-		
+
 		for(i=0;i<sizeof data/sizeof data[0];++i)
 		{
 			char *nrm=(char *)MALLOC(strlen(data[i][0])+1);
-			
+
 			int good=normalize_path(nrm,data[i][0]);
-			
+
 			if(!data[i][1])
 			{
 				CHECK(!good);
@@ -4531,7 +4728,7 @@ void yhs_run_unit_tests(void)
 				CHECK(good);
 				CHECK(strcmp(nrm,data[i][1])==0);
 			}
-			
+
 			FREE(nrm);
 			nrm=0;
 		}
@@ -4562,18 +4759,18 @@ void yhs_run_unit_tests(void)
 // 			{"The quick brown fox jumps over the lazy cog","de9f2c7fd25e1b3afad3e85a0bd17d9b100db4b3"},
 // 		};
 // 		size_t i;
-// 
+//
 // 		for(i=0;i<sizeof data/sizeof data[0];++i)
 // 		{
 // 			size_t j;
 // 			uint8_t hash[20];
-// 
+//
 // 			sha1(hash,data[i][0],strlen(data[i][0]));
-// 
+//
 // 			char hash_str[41];
 // 			for(j=0;j<20;++j)
 // 				sprintf(hash_str+j*2,"%02x",hash[j]);
-// 
+//
 // 			CHECK(strcmp(hash_str,data[i][1])==0);
 // 		}
 // 	}

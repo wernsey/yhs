@@ -9,7 +9,9 @@
 #ifdef WIN32
 
 // Windows
+#ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x500
+#endif
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <windows.h>
@@ -39,6 +41,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <ctype.h>
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////

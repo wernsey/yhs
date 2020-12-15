@@ -1,0 +1,32 @@
+EXECUTABLE = test.exe
+
+CFLAGS = -c
+LDFLAGS = -lws2_32 -static
+
+ifeq ($(BUILD),debug)
+# Debug
+CFLAGS += -O0 -g
+LDFLAGS +=
+else
+# Release mode
+CFLAGS += -O2 -DNDEBUG
+LDFLAGS += -s
+endif
+
+$(EXECUTABLE): yhs_test.o yhs.o
+	g++ $^ $(LDFLAGS) -o $@
+
+.c.o:
+	gcc $(CFLAGS) $< -o $@
+
+.cpp.o:
+	g++ $(CFLAGS) $< -o $@
+
+yhs_test.o: yhs_test.cpp yhs.h
+yhs.o: yhs.c yhs.h
+
+.PHONY : clean
+
+clean:
+	-rm -f $(EXECUTABLE)
+	-rm -f *.o
